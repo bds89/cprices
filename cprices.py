@@ -5,21 +5,23 @@ from socket import timeout
 from time import sleep
 from uuid import uuid4
 from requests import Session
-from telegram import InlineQueryResultArticle, InlineKeyboardButton, InlineKeyboardMarkup, Update, InputTextMessageContent
+from telegram import (ReplyKeyboardRemove, Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup,
+                      InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto)
 from telegram.ext import (
-    Updater,
+    Application,
     CommandHandler,
-    CallbackQueryHandler,
+    ContextTypes,
     ConversationHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
     CallbackContext,
     InlineQueryHandler,
-    MessageHandler,
-    Filters
 )
-from telegram.utils.helpers import escape_markdown
+from telegram.helpers import escape_markdown
 
-TOKEN = "telegram_token"
-API_KEY_COINMARKETCUP = "coinmarketcup_token"
+TOKEN = "5219368375:AAEd0EEak-CzzT6eYgVwz8ozEzOg0KMOOqc"
+API_KEY_COINMARKETCUP = "bb79786e-0e19-457e-814c-dcc9d0d4339e"
 
 def round_price(price):
     forRound = {10000:0,
@@ -85,7 +87,7 @@ def save_to_db(uId, one_user_list, name="?", surname="?"):
         return False
     
 def get_data(uId, name=""):
-    if datetime.datetime.now() - lastRequestTime > datetime.timedelta(minutes=10):
+    if datetime.datetime.now() - lastRequestTime > datetime.timedelta(minutes=2):
         url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/listings/latest'
         parameters = {'limit':500}
         headers = {'Accepts': 'application/json','X-CMC_PRO_API_KEY': API_KEY_COINMARKETCUP,}
@@ -95,7 +97,7 @@ def get_data(uId, name=""):
         try:
             response = session.get(url, params=parameters)
             data = json.loads(response.text)
-            print("New responce to Coinmarketcup")
+            print("WAS REQUEST: "+name)
             if data["status"]["error_code"] != 0: return({"status":0, "data":data["status"]["error_message"]})
         except: return({"status":0, "data":"Unknown error"})
         globals()["requestData"] = data
@@ -110,19 +112,49 @@ def get_data(uId, name=""):
         if one_user_list:
             for item in requestData["data"]:
                 if item["symbol"].upper() in one_user_list:
-                    summary20Item["data"][item["symbol"]] = "{0} ({1}): {2}$ ({3}%)".format(
-                                        item["symbol"], 
-                                        item["name"], 
-                                        round_price(item["quote"]["USD"]["price"]), 
-                                        round(item["quote"]["USD"]["percent_change_24h"], 2))
+
+                    XCH_net_space = ""
+                    if item["symbol"].upper() == "XCH": XCH_net_space = getXCH_NetSpace(item["quote"]["USD"]["price"])
+
+                    if item["quote"]["USD"]["percent_change_24h"] >= 0: arrow24 = "⬆"
+                    else: arrow24 = "⬇"
+                    if item["quote"]["USD"]["percent_change_1h"] >= 0: arrow1 = "⬆"
+                    else: arrow1 = "⬇"
+                    if item["quote"]["USD"]["percent_change_24h"] > 10: emotion = "🚀"
+                    else: emotion = ""
+                    summary20Item["data"][item["symbol"]] = "{0} ({1}): {2}$ {3}\n1h: {4}{5}%; 24h: {6}{7}%{8}".format(
+                                        item["symbol"],
+                                        item["name"],
+                                        round_price(item["quote"]["USD"]["price"]),
+                                        emotion,
+                                        arrow1,
+                                        round(item["quote"]["USD"]["percent_change_1h"], 2),
+                                        arrow24,
+                                        round(item["quote"]["USD"]["percent_change_24h"], 2),
+                                        XCH_net_space)
         else:
             itemNum = 0
             for item in requestData["data"]:
-                summary20Item["data"][item["symbol"]] = "{0} ({1}): {2}$ ({3}%)".format(
-                                    item["symbol"], 
-                                    item["name"], 
-                                    round_price(item["quote"]["USD"]["price"]), 
-                                    round(item["quote"]["USD"]["percent_change_24h"], 2))
+                if item["quote"]["USD"]["percent_change_24h"] >= 0: arrow24 = "⬆"
+                else: arrow24 = "⬇"
+                if item["quote"]["USD"]["percent_change_1h"] >= 0: arrow1 = "⬆"
+                else: arrow1 = "⬇"
+                if item["quote"]["USD"]["percent_change_24h"] > 10: emotion = "🚀"
+                else: emotion = ""
+
+                XCH_net_space = ""
+                if item["symbol"].upper() == "XCH": XCH_net_space = getXCH_NetSpace(item["quote"]["USD"]["price"])
+
+                summary20Item["data"][item["symbol"]] = "{0} ({1}): {2}$ {3}\n1h: {4}{5}%; 24h: {6}{7}%{8}".format(
+                                    item["symbol"],
+                                    item["name"],
+                                    round_price(item["quote"]["USD"]["price"]),
+                                    emotion,
+                                    arrow1,
+                                    round(item["quote"]["USD"]["percent_change_1h"], 2),
+                                    arrow24,
+                                    round(item["quote"]["USD"]["percent_change_24h"], 2),
+                                    XCH_net_space)
                 itemNum += 1
                 if itemNum >= 7: break
         summary20Item["status"] = 200
@@ -132,20 +164,66 @@ def get_data(uId, name=""):
         findedItem = {"status":0, "data":{}}
         for item in requestData["data"]:
             if name in item["symbol"].upper() or name in item["name"].upper():
-                findedItem["data"][item["symbol"]] = "{0} ({1}): {2}$ ({3}%)".format(
-                                item["symbol"], 
-                                item["name"], 
-                                round_price(item["quote"]["USD"]["price"]), 
-                                round(item["quote"]["USD"]["percent_change_24h"], 2))
+                if item["quote"]["USD"]["percent_change_24h"] >= 0: arrow24 = "⬆"
+                else: arrow24 = "⬇"
+                if item["quote"]["USD"]["percent_change_1h"] >= 0: arrow1 = "⬆"
+                else: arrow1 = "⬇"
+                if item["quote"]["USD"]["percent_change_24h"] > 10: emotion = "🚀"
+                else: emotion = ""
+
+                XCH_net_space = ""
+                if item["symbol"].upper() == "XCH": XCH_net_space = getXCH_NetSpace(item["quote"]["USD"]["price"])
+
+                findedItem["data"][item["symbol"]] = "{0} ({1}): {2}$ {3}\n1h: {4}{5}%; 24h: {6}{7}%{8}".format(
+                                    item["symbol"],
+                                    item["name"],
+                                    round_price(item["quote"]["USD"]["price"]),
+                                    emotion,
+                                    arrow1,
+                                    round(item["quote"]["USD"]["percent_change_1h"], 2),
+                                    arrow24,
+                                    round(item["quote"]["USD"]["percent_change_24h"], 2),
+                                    XCH_net_space)
         findedItem["status"] = 200
         return(findedItem)
-        
+
+def getXCH_NetSpace(price):
+    convert = {"M":(0.9765625**3)*(10**-9), "G":(0.9765625**2)*(10**-6), "T":0.9765625*(10**-3), "P":1, "E":1.024*(10**3)}
+    now_time = datetime.datetime.now()
+    try:
+        if not XCH_NET_SPACE or (XCH_NET_SPACE and now_time - XCH_NET_SPACE["timestamp"] > datetime.timedelta(minutes=5)):
+            cli = os.popen('/usr/lib/chia-blockchain/resources/app.asar.unpacked/daemon/chia netspace').read()
+            net_space = re.findall(r"\n(\d+\.\d*.+)", cli)
+            if net_space:
+                net_space = net_space[0]
+                globals()["XCH_NET_SPACE"]["timestamp"] = now_time
+                globals()["XCH_NET_SPACE"]["net_space"] = net_space
+
+                unit = re.findall(r"\d+\.\d* ([MGTPE])iB", net_space)[0]
+                net_space_float = float(re.findall(r"(\d+\.\d*)", net_space)[0])
+                net_space_float = net_space_float * convert[unit]
+                XCHperPib = (1/net_space_float)*4608*2
+                USDTperPib = round(XCHperPib*float(price), 2)
+                print("XCH NET SPACE")
+                return "\nNet Space: {0}\nXCH/PiB: {1} ({2}$)".format(net_space, round(XCHperPib, 4), USDTperPib)
+        if XCH_NET_SPACE:
+            unit = re.findall(r"\d+\.\d* ([MGTPE])iB", XCH_NET_SPACE["net_space"])[0]
+            net_space_float = float(re.findall(r"(\d+\.\d*)", XCH_NET_SPACE["net_space"])[0])
+            net_space_float = net_space_float * convert[unit]
+            XCHperPib = (0.9765625/net_space_float)*4608*2
+            USDTperPib = round(XCHperPib*float(price), 2)
+            return "\nNet Space: {0}\nXCH/1000TiB: {1} ({2}$)".format(XCH_NET_SPACE["net_space"], round(XCHperPib, 4), USDTperPib)
+        else: return ""
+    except Exception as e:
+        print(e)
+        return ""
+
 # Stages
 FORK, SEE, ADD, TIMEOUT = range(4)
 # # Callback data
 # see, add, back, dellAll, top20, toend = range(6)
 
-def start(update: Update, context: CallbackContext) -> int:
+async def start(update: Update, context: CallbackContext) -> int:
     """Send message on `/start`."""
 
     keyboard = [
@@ -156,14 +234,14 @@ def start(update: Update, context: CallbackContext) -> int:
     ]
     text = "Hi "+update._effective_user.name+", I will help you complete the list of favorite cryptocurrencies"
     reply_markup = InlineKeyboardMarkup(keyboard)
-    if update.message: update.message.reply_text(text, reply_markup=reply_markup)
-    else: update.callback_query.edit_message_text(text, reply_markup=reply_markup)
+    if update.message: await update.message.reply_text(text, reply_markup=reply_markup)
+    else: await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
     return FORK
 
-def start_over(update: Update, context: CallbackContext) -> int:
+async def start_over(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
 
-    query.answer()
+    await query.answer()
     keyboard = [
         [
             InlineKeyboardButton("Show favorite", callback_data="see"),
@@ -172,13 +250,13 @@ def start_over(update: Update, context: CallbackContext) -> int:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    query.edit_message_text(text="Hi "+update._effective_user.name+", I will help you complete the list of favorite cryptocurrencies", reply_markup=reply_markup)
+    await query.edit_message_text(text="Hi "+update._effective_user.name+", I will help you complete the list of favorite cryptocurrencies", reply_markup=reply_markup)
     return FORK
 
-def show_list(update: Update, context: CallbackContext) -> int:
+async def show_list(update: Update, context: CallbackContext) -> int:
     text = ""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     uId = query.from_user.id
 
     #dell from USER LIST
@@ -240,16 +318,16 @@ def show_list(update: Update, context: CallbackContext) -> int:
         )
 
     reply_markup = InlineKeyboardMarkup(keyboard)
-    query.edit_message_text(
+    await query.edit_message_text(
         text=text, reply_markup=reply_markup
     )
     return SEE
 
 
-def add_cur(update: Update, context: CallbackContext) -> int:
+async def add_cur(update: Update, context: CallbackContext) -> int:
     if update.callback_query: 
         query = update.callback_query
-        query.answer()
+        await query.answer()
         if query.data != "top25":
             keyboard = [
                 [
@@ -258,7 +336,7 @@ def add_cur(update: Update, context: CallbackContext) -> int:
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.edit_message_text(
+            await query.edit_message_text(
                 text="To add a cryptocurrency, send me its name or ticker", reply_markup=reply_markup)
             return ADD
         else:
@@ -297,7 +375,7 @@ def add_cur(update: Update, context: CallbackContext) -> int:
             )
             text="Select a currency to add to your favorites list"
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.edit_message_text(
+            await query.edit_message_text(
                 text=text, reply_markup=reply_markup
             )
             return SEE
@@ -314,7 +392,7 @@ def add_cur(update: Update, context: CallbackContext) -> int:
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.reply_text(
+            await query.reply_text(
                 text=text, reply_markup=reply_markup
             )
             return ADD
@@ -360,20 +438,20 @@ def add_cur(update: Update, context: CallbackContext) -> int:
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.reply_text(
+            await query.reply_text(
                 text=text, reply_markup=reply_markup
             )
             return ADD
         text+="Select a currency to add to your favorites list"
         reply_markup = InlineKeyboardMarkup(keyboard)
-        query.reply_text(
+        await query.reply_text(
             text=text, reply_markup=reply_markup
         )
         return SEE
 
     else: return ADD
 
-def end(update: Update, context: CallbackContext) -> int:
+async def end(update: Update, context: CallbackContext):
 
     query = update.message
     keyboard = [
@@ -382,14 +460,14 @@ def end(update: Update, context: CallbackContext) -> int:
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    query.reply_text(text="See you next time!", reply_markup=reply_markup)
+    await query.reply_text(text="See you next time!", reply_markup=reply_markup)
     return ConversationHandler.END
 
-def help_command(update: Update, context: CallbackContext) -> None:
+async def help_command(update: Update, context: CallbackContext):
     """Send a message when the command /help is issued."""
-    update.message.reply_text('use /start for start talking\nuse /stop for stop talking')
+    await update.message.reply_text('use /start for start talking\nuse /stop for stop talking')
 
-def inlinequery(update: Update, context: CallbackContext) -> None:
+async def inlinequery(update: Update, context: CallbackContext):
     results = []
     """Handle the inline query."""
     query = update.inline_query.query
@@ -408,25 +486,26 @@ def inlinequery(update: Update, context: CallbackContext) -> None:
                             title=key,
                             description=value,
                             input_message_content=InputTextMessageContent(value),
-                            thumb_url="https://s2.coinmarketcap.com/static/img/coins/128x128/{0}.png".format(iconsDict[key]),
+                            thumbnail_url="https://s2.coinmarketcap.com/static/img/coins/128x128/{0}.png".format(iconsDict[key]),
                         ))
-            return(update.inline_query.answer(results, cache_time=30))
+            return await update.inline_query.answer(results, cache_time=30)
         else:
             results.append(InlineQueryResultArticle(
                     id=str(uuid4()),
                     title=getDataAnswer["data"],
                     input_message_content=InputTextMessageContent(getDataAnswer["data"]),
                 ))
-            return(update.inline_query.answer(results))
+
+            return await update.inline_query.answer(results)
 
 
 def main() -> None:
     """Run the bot."""
-    updater = Updater(TOKEN)
-    dispatcher = updater.dispatcher
+    application = Application.builder().token(TOKEN).concurrent_updates(10).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start), CallbackQueryHandler(start, pattern='^start$')],
+        entry_points=[CommandHandler("start", start),
+                      CallbackQueryHandler(start, pattern='^start$')],
         states={
             FORK: [
                 CallbackQueryHandler(show_list, pattern='^see$'),
@@ -445,28 +524,24 @@ def main() -> None:
                 CallbackQueryHandler(end, pattern='^toend$'),
                 CallbackQueryHandler(start_over, pattern='^back$'),
                 CallbackQueryHandler(add_cur, pattern='^top25$'),
-                MessageHandler(Filters.text , add_cur),
+                MessageHandler(filters.TEXT , add_cur),
                 CommandHandler("stop", end),
             ],
             TIMEOUT: [
                 CallbackQueryHandler(end),
             ],
         },
-        fallbacks=[CommandHandler('start', start)],
-        # per_message=True
-    )
+        fallbacks=[CommandHandler('start', start)],)
 
-    dispatcher.add_handler(conv_handler)
+    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(start, pattern='^start$'))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(InlineQueryHandler(inlinequery))
 
-    dispatcher.add_handler(CommandHandler("start", start))
-    dispatcher.add_handler(CallbackQueryHandler(start, pattern='^start$'))
-    dispatcher.add_handler(CommandHandler("help", help_command))
-
-    dispatcher.add_handler(InlineQueryHandler(inlinequery))
-
-    updater.start_polling()
-
-    updater.idle()
+    # Run the bot until the user presses Ctrl-C
+    application.run_polling(connect_timeout=10, pool_timeout=10, read_timeout=5, write_timeout=5,
+                            allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == '__main__':
